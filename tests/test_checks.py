@@ -6,7 +6,15 @@ from pathlib import Path
 
 from app.checks import run_project_checks
 from app.database import initialize_database
-from app.projects import add_target, create_project, list_check_results, list_findings
+from app.projects import (
+    add_target,
+    create_project,
+    create_remediation_task,
+    list_check_results,
+    list_findings,
+    list_remediation_tasks,
+    update_finding_status,
+)
 
 
 def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path: Path) -> None:
@@ -27,6 +35,9 @@ def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path
     assert {result.check_type for result in results} == {
         "secret_leak", "dependency", "configuration", "http_baseline"
     }
+    update_finding_status(database_path, project.id, findings[0].id, "confirmed")
+    create_remediation_task(database_path, findings[0].id, "测试根因", "测试修复建议")
+    assert list_remediation_tasks(database_path, project.id)[0].finding_id == findings[0].id
 
 
 def test_checks_skip_unregistered_targets(tmp_path: Path) -> None:

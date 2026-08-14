@@ -81,6 +81,16 @@ class Finding:
 
 
 @dataclass(frozen=True)
+class RemediationTask:
+    finding_id: int
+    root_cause: str
+    recommendation: str
+    owner: str
+    due_date: str
+    status: str
+
+
+@dataclass(frozen=True)
 class MatrixRow:
     role_name: str
     resource_name: str
@@ -371,6 +381,28 @@ def list_findings(database_path: Path, project_id: int) -> list[Finding]:
             (project_id,),
         ).fetchall()
     return [Finding(**dict(row)) for row in rows]
+
+
+def update_finding_status(database_path: Path, project_id: int, finding_id: int, status: str) -> None:
+    if status not in {"pending", "confirmed", "false_positive", "fixed"}:
+        raise ValidationError("发现状态无效。")
+    with connect(database_path) as connection:
+        cursor = connection.execute("UPDATE findings SET status = ? WHERE id = ? AND project_id = ?", (status, finding_id, project_id))
+        if cursor.rowcount != 1:
+            raise ValidationError("发现不属于当前项目。")
+
+
+def create_remediation_task(database_path: Path, finding_id: int, root_cause: str, recommendation: str, owner: str = "", due_date: str = "") -> None:
+    if not root_cause.strip() or not recommendation.strip():
+        raise ValidationError("根因和修复建议不能为空。")
+    with connect(database_path) as connection:
+        connection.execute("INSERT INTO remediation_tasks (finding_id, root_cause, recommendation, owner, due_date) VALUES (?, ?, ?, ?, ?)", (finding_id, root_cause.strip(), recommendation.strip(), owner.strip(), due_date.strip()))
+
+
+def list_remediation_tasks(database_path: Path, project_id: int) -> list[RemediationTask]:
+    with connect(database_path) as connection:
+        rows = connection.execute("SELECT remediation_tasks.finding_id, root_cause, recommendation, owner, due_date, remediation_tasks.status FROM remediation_tasks JOIN findings ON findings.id = remediation_tasks.finding_id WHERE findings.project_id = ? ORDER BY remediation_tasks.id DESC", (project_id,)).fetchall()
+    return [RemediationTask(**dict(row)) for row in rows]
 
 
 def add_role(database_path: Path, project_id: int, name: str) -> None:
