@@ -89,6 +89,14 @@ class MatrixRow:
     expected_access: str
 
 
+@dataclass(frozen=True)
+class TestAccountMapping:
+    role_name: str
+    account_name: str
+    authentication_type: str
+    credential_source: str
+
+
 def _project_from_row(row) -> Project:
     return Project(**dict(row))
 
@@ -443,3 +451,16 @@ def list_matrix_rows(database_path: Path, project_id: int) -> list[MatrixRow]:
             (project_id,),
         ).fetchall()
     return [MatrixRow(**dict(row)) for row in rows]
+
+
+def add_test_account_mapping(database_path: Path, project_id: int, role_id: int, account_name: str, authentication_type: str, credential_source: str) -> None:
+    if not account_name.strip() or authentication_type not in {"cookie", "bearer"} or credential_source not in {"vault", "runtime"}:
+        raise ValidationError("测试账号映射参数无效。")
+    with connect(database_path) as connection:
+        connection.execute("INSERT INTO test_account_mappings (project_id, role_id, account_name, authentication_type, credential_source) VALUES (?, ?, ?, ?, ?)", (project_id, role_id, account_name.strip(), authentication_type, credential_source))
+
+
+def list_test_account_mappings(database_path: Path, project_id: int) -> list[TestAccountMapping]:
+    with connect(database_path) as connection:
+        rows = connection.execute("SELECT roles.name AS role_name, account_name, authentication_type, credential_source FROM test_account_mappings JOIN roles ON roles.id = test_account_mappings.role_id WHERE test_account_mappings.project_id = ?", (project_id,)).fetchall()
+    return [TestAccountMapping(**dict(row)) for row in rows]
