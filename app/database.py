@@ -99,5 +99,40 @@ def initialize_database(database_path: Path) -> None:
                 )),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS roles (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                UNIQUE(project_id, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS protected_resources (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                method TEXT NOT NULL,
+                endpoint TEXT NOT NULL,
+                UNIQUE(project_id, method, endpoint)
+            );
+
+            CREATE TABLE IF NOT EXISTS permission_rules (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+                resource_id INTEGER NOT NULL REFERENCES protected_resources(id) ON DELETE CASCADE,
+                expected_access TEXT NOT NULL CHECK (expected_access IN ('allow', 'deny')),
+                UNIQUE(project_id, role_id, resource_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS test_account_mappings (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+                account_name TEXT NOT NULL,
+                authentication_type TEXT NOT NULL CHECK (authentication_type IN ('cookie', 'bearer')),
+                credential_source TEXT NOT NULL CHECK (credential_source IN ('vault', 'runtime')),
+                UNIQUE(project_id, role_id, account_name)
+            );
             """
         )

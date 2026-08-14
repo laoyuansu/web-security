@@ -80,6 +80,15 @@ class Finding:
     created_at: str
 
 
+@dataclass(frozen=True)
+class MatrixRow:
+    role_name: str
+    resource_name: str
+    method: str
+    endpoint: str
+    expected_access: str
+
+
 def _project_from_row(row) -> Project:
     return Project(**dict(row))
 
@@ -354,3 +363,83 @@ def list_findings(database_path: Path, project_id: int) -> list[Finding]:
             (project_id,),
         ).fetchall()
     return [Finding(**dict(row)) for row in rows]
+
+
+def add_role(database_path: Path, project_id: int, name: str) -> None:
+    normalized_name = name.strip()
+    if not 1 <= len(normalized_name) <= 80:
+        raise ValidationError("角色名称必须为 1 至 80 个字符。")
+    with connect(database_path) as connection:
+        try:
+            connection.execute("INSERT INTO roles (project_id, name) VALUES (?, ?)", (project_id, normalized_name))
+        except Exception as error:
+            if "UNIQUE constraint failed" in str(error):
+                raise ValidationError("角色已存在。") from error
+            raise
+
+
+def add_resource(database_path: Path, project_id: int, name: str, method: str, endpoint: str) -> None:
+    normalized_name, normalized_method, normalized_endpoint = name.strip(), method.strip().upper(), endpoint.strip()
+    if not normalized_name or normalized_method not in {"GET", "POST", "PUT", "PATCH", "DELETE"} or not normalized_endpoint.startswith("/"):
+        raise ValidationError("资源名称、HTTP 方法或本地接口路径无效。")
+    with connect(database_path) as connection:
+        try:
+            connection.execute(
+                "INSERT INTO protected_resources (project_id, name, method, endpoint) VALUES (?, ?, ?, ?)",
+                (project_id, normalized_name, normalized_method, normalized_endpoint),
+            )
+        except Exception as error:
+            if "UNIQUE constraint failed" in str(error):
+                raise ValidationError("资源接口已存在。") from error
+            raise
+
+
+def list_roles(database_path: Path, project_id: int):
+    with connect(database_path) as connection:
+        return connection.execute("SELECT id, name FROM roles WHERE project_id = ? ORDER BY id", (project_id,)).fetchall()
+
+
+def list_resources(database_path: Path, project_id: int):
+    with connect(database_path) as connection:
+        return connection.execute(
+            "SELECT id, name, method, endpoint FROM protected_resources WHERE project_id = ? ORDER BY id", (project_id,)
+        ).fetchall()
+
+
+def set_permission_rule(database_path: Path, project_id: int, role_id: int, resource_id: int, expected_access: str) -> None:
+    if expected_access not in {"allow", "deny"}:
+        raise ValidationError("预期权限必须为 allow 或 deny。")
+    with connect(database_path) as connection:
+        valid = connection.execute(
+            """
+            SELECT (SELECT COUNT(*) FROM roles WHERE id = ? AND project_id = ?) +
+                   (SELECT COUNT(*) FROM protected_resources WHERE id = ? AND project_id = ?) AS count
+            """,
+            (role_id, project_id, resource_id, project_id),
+        ).fetchone()["count"]
+        if valid != 2:
+            raise ValidationError("角色或资源不属于当前项目。")
+        connection.execute(
+            """
+            INSERT INTO permission_rules (project_id, role_id, resource_id, expected_access)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(project_id, role_id, resource_id) DO UPDATE SET expected_access = excluded.expected_access
+            """,
+            (project_id, role_id, resource_id, expected_access),
+        )
+
+
+def list_matrix_rows(database_path: Path, project_id: int) -> list[MatrixRow]:
+    with connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT roles.name AS role_name, protected_resources.name AS resource_name,
+                   protected_resources.method, protected_resources.endpoint, permission_rules.expected_access
+            FROM permission_rules
+            JOIN roles ON roles.id = permission_rules.role_id
+            JOIN protected_resources ON protected_resources.id = permission_rules.resource_id
+            WHERE permission_rules.project_id = ? ORDER BY roles.id, protected_resources.id
+            """,
+            (project_id,),
+        ).fetchall()
+    return [MatrixRow(**dict(row)) for row in rows]

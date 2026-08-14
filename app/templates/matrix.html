@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}权限矩阵｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <h1>权限矩阵</h1>
+  <p>仅配置预期规则；本页不保存账号密码，也不会发起任何服务请求。</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <div class="two-column">
+    <section class="card form-card"><h2>角色</h2><form method="post" action="/projects/{{ project_id }}/matrix/roles"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="name" maxlength="80" required><button type="submit">添加角色</button></form>{% for role in roles %}<p>{{ role.name }}</p>{% endfor %}</section>
+    <section class="card form-card"><h2>资源/API</h2><form method="post" action="/projects/{{ project_id }}/matrix/resources"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="name" placeholder="资源名称" required><select name="method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select><input name="endpoint" placeholder="/api/resource" required><button type="submit">添加资源</button></form>{% for resource in resources %}<p>{{ resource.method }} {{ resource.endpoint }} · {{ resource.name }}</p>{% endfor %}</section>
+  </div>
+  <section class="card form-card"><h2>预期规则</h2><form method="post" action="/projects/{{ project_id }}/matrix/rules"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><select name="role_id">{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select><select name="resource_id">{% for resource in resources %}<option value="{{ resource.id }}">{{ resource.method }} {{ resource.endpoint }}</option>{% endfor %}</select><select name="expected_access"><option value="allow">允许</option><option value="deny">拒绝</option></select><button type="submit">保存规则</button></form>{% for rule in rules %}<p>{{ rule.role_name }} · {{ rule.method }} {{ rule.endpoint }} · {{ rule.expected_access }}</p>{% endfor %}</section>
+{% endblock %}
