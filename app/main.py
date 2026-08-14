@@ -17,6 +17,7 @@ from app.database import initialize_database
 from app.projects import list_projects
 from app.routes.matrix import build_matrix_router
 from app.routes.projects import build_project_router
+from app.routes.reports import build_report_router
 from app.security.auth import (
     csrf_token_is_valid,
     establish_authenticated_session,
@@ -57,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(APPLICATION_DIRECTORY / "templates"))
     application.include_router(build_project_router(templates))
     application.include_router(build_matrix_router(templates))
+    application.include_router(build_report_router(templates))
 
     @application.middleware("http")
     async def apply_security_headers(request: Request, call_next):

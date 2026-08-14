@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}报告｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <h1>{{ project.name }}：报告与备份</h1>
+  <p>导出内容不包含账号密码、Token 或 Cookie。</p>
+  <p><a class="button-link" href="/projects/{{ project.id }}/report/markdown">下载 Markdown 报告</a></p>
+  <p><a class="button-link" href="/projects/{{ project.id }}/backup.json">下载脱敏 JSON 备份</a></p>
+{% endblock %}
