@@ -15,7 +15,7 @@ from app.projects import (
     list_remediation_tasks,
     update_finding_status,
 )
-from app.reports import build_markdown_report, build_redacted_backup
+from app.reports import build_markdown_report, build_redacted_backup, import_redacted_backup
 
 
 def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path: Path) -> None:
@@ -41,6 +41,8 @@ def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path
     assert list_remediation_tasks(database_path, project.id)[0].finding_id == findings[0].id
     assert "安全自查报告" in build_markdown_report(database_path, project.id)
     assert '"credential_data_included": false' in build_redacted_backup(database_path, project.id)
+    imported = import_redacted_backup(database_path, build_redacted_backup(database_path, project.id))
+    assert imported.name.endswith("（导入）")
 
 
 def test_checks_skip_unregistered_targets(tmp_path: Path) -> None:

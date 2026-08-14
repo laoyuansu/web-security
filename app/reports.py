@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 from app.projects import (
+    add_asset,
+    create_project,
     get_project,
     list_assets,
     list_check_results,
@@ -13,6 +15,27 @@ from app.projects import (
     list_import_records,
     list_remediation_tasks,
 )
+
+
+def import_redacted_backup(database_path: Path, source_text: str):
+    """Import only the documented credential-free backup shape as a new project."""
+
+    document = json.loads(source_text)
+    forbidden = {"password", "token", "cookie", "secret", "credential"}
+    if not isinstance(document, dict) or document.get("format") != "local-web-security-workbench-backup-v1":
+        raise ValueError("不支持的备份格式。")
+    if document.get("credential_data_included") is not False:
+        raise ValueError("备份必须明确声明不包含凭据。")
+    if any(key in forbidden for key in document):
+        raise ValueError("备份包含禁止的凭据字段。")
+    project_data = document.get("project")
+    if not isinstance(project_data, dict):
+        raise TypeError("备份缺少项目元数据。")
+    project = create_project(database_path, str(project_data.get("name", "")).strip() + "（导入）", str(project_data.get("description", "")))
+    for asset in document.get("assets", []):
+        if isinstance(asset, dict):
+            add_asset(database_path, project.id, str(asset.get("type", "")), str(asset.get("name", "")), str(asset.get("value", "")))
+    return project
 
 
 def build_markdown_report(database_path: Path, project_id: int) -> str:
