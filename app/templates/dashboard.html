@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}项目总览｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">已验证本机登录</p>
+      <h1>项目总览</h1>
+      <p>欢迎，{{ username }}。项目、资产与安全检查将在后续小项目中接入。</p>
+    </div>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">退出登录</button>
+    </form>
+  </header>
+  <section class="notice" aria-label="当前范围">
+    服务仅应通过 <code>127.0.0.1</code> 访问；不会扫描公网或未登记目标。
+  </section>
+{% endblock %}

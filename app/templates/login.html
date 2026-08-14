@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}登录｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <section class="card login-card" aria-labelledby="login-title">
+    <p class="eyebrow">仅限本机使用</p>
+    <h1 id="login-title">本地 Web 安全自查与修复台</h1>
+    <p>使用独立管理员凭据登录。测试账号凭据不会用于此登录。</p>
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="username">用户名</label>
+      <input id="username" name="username" autocomplete="username" required>
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">登录</button>
+    </form>
+  </section>
+{% endblock %}
