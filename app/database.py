@@ -63,5 +63,41 @@ def initialize_database(database_path: Path) -> None:
                 detail TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS check_runs (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+                started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS check_results (
+                id INTEGER PRIMARY KEY,
+                check_run_id INTEGER NOT NULL REFERENCES check_runs(id) ON DELETE CASCADE,
+                check_type TEXT NOT NULL CHECK (check_type IN (
+                    'secret_leak', 'dependency', 'configuration', 'http_baseline'
+                )),
+                outcome TEXT NOT NULL CHECK (outcome IN ('passed', 'skipped', 'error')),
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS findings (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                check_run_id INTEGER NOT NULL REFERENCES check_runs(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                module TEXT NOT NULL,
+                finding_type TEXT NOT NULL,
+                severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high')),
+                evidence TEXT NOT NULL,
+                expected TEXT NOT NULL,
+                actual TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                    'pending', 'confirmed', 'false_positive', 'fixed'
+                )),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )

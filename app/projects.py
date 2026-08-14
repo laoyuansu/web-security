@@ -59,6 +59,27 @@ class ImportRecord:
     created_at: str
 
 
+@dataclass(frozen=True)
+class CheckResult:
+    check_type: str
+    outcome: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class Finding:
+    id: int
+    title: str
+    module: str
+    finding_type: str
+    severity: str
+    evidence: str
+    expected: str
+    actual: str
+    status: str
+    created_at: str
+
+
 def _project_from_row(row) -> Project:
     return Project(**dict(row))
 
@@ -262,3 +283,74 @@ def list_import_records(database_path: Path, project_id: int) -> list[ImportReco
             "SELECT * FROM import_records WHERE project_id = ? ORDER BY id DESC LIMIT 50", (project_id,)
         ).fetchall()
     return [_import_record_from_row(row) for row in rows]
+
+
+def create_check_run(database_path: Path, project_id: int) -> int:
+    with connect(database_path) as connection:
+        cursor = connection.execute("INSERT INTO check_runs (project_id, status) VALUES (?, 'running')", (project_id,))
+    return int(cursor.lastrowid)
+
+
+def finish_check_run(database_path: Path, run_id: int, status: str = "completed") -> None:
+    with connect(database_path) as connection:
+        connection.execute(
+            "UPDATE check_runs SET status = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?", (status, run_id)
+        )
+
+
+def record_check_result(
+    database_path: Path, run_id: int, check_type: str, outcome: str, detail: str
+) -> None:
+    with connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO check_results (check_run_id, check_type, outcome, detail) VALUES (?, ?, ?, ?)",
+            (run_id, check_type, outcome, detail[:1_000]),
+        )
+
+
+def record_finding(
+    database_path: Path,
+    project_id: int,
+    run_id: int,
+    title: str,
+    module: str,
+    finding_type: str,
+    severity: str,
+    evidence: str,
+    expected: str,
+    actual: str,
+) -> None:
+    with connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO findings (
+                project_id, check_run_id, title, module, finding_type, severity, evidence, expected, actual
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (project_id, run_id, title, module, finding_type, severity, evidence[:1_000], expected, actual),
+        )
+
+
+def list_check_results(database_path: Path, project_id: int) -> list[CheckResult]:
+    with connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT check_type, outcome, detail FROM check_results
+            INNER JOIN check_runs ON check_runs.id = check_results.check_run_id
+            WHERE check_runs.project_id = ? ORDER BY check_results.id DESC LIMIT 20
+            """,
+            (project_id,),
+        ).fetchall()
+    return [CheckResult(**dict(row)) for row in rows]
+
+
+def list_findings(database_path: Path, project_id: int) -> list[Finding]:
+    with connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, title, module, finding_type, severity, evidence, expected, actual, status, created_at
+            FROM findings WHERE project_id = ? ORDER BY id DESC LIMIT 50
+            """,
+            (project_id,),
+        ).fetchall()
+    return [Finding(**dict(row)) for row in rows]

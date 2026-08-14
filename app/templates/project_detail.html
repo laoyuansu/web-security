@@ -68,4 +68,25 @@
       {% endfor %}
     </ul>
   </section>
+  <section class="card form-card import-card" aria-labelledby="check-title">
+    <h2 id="check-title">安全检查</h2>
+    <p>检查只读取已登记代码目录，并且仅向已登记的 localhost URL 发起 HTTP 请求。</p>
+    <form method="post" action="/projects/{{ project.id }}/checks">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">运行本地安全检查</button>
+    </form>
+    <ul class="item-list">
+      {% for result in check_results %}
+        <li><strong>{{ result.check_type }} · {{ result.outcome }}</strong><span>{{ result.detail }}</span></li>
+      {% else %}<li>尚未运行检查。</li>{% endfor %}
+    </ul>
+  </section>
+  <section class="card form-card" aria-labelledby="finding-title">
+    <h2 id="finding-title">待确认发现</h2>
+    <ul class="item-list">
+      {% for finding in findings %}
+        <li><strong>{{ finding.severity }} · {{ finding.title }}</strong><span>{{ finding.evidence }}</span></li>
+      {% else %}<li>暂无发现。</li>{% endfor %}
+    </ul>
+  </section>
 {% endblock %}
