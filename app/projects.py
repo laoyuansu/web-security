@@ -11,6 +11,8 @@ from app.database import connect
 
 TARGET_TYPES = {"code_directory", "local_url", "docker_address"}
 ASSET_TYPES = {"page", "api", "data_type", "dependency", "docker_service"}
+IMPORT_SOURCE_KINDS = {"openapi", "requirements", "package_json", "docker_compose"}
+IMPORT_OUTCOMES = {"imported", "skipped", "error"}
 LOCAL_HOSTNAMES = {"localhost", "127.0.0.1"}
 DOCKER_BRIDGE_NETWORK = ipaddress.ip_network("172.16.0.0/12")
 
@@ -46,6 +48,17 @@ class Asset:
     created_at: str
 
 
+@dataclass(frozen=True)
+class ImportRecord:
+    id: int
+    project_id: int
+    source_kind: str
+    source_path: str
+    outcome: str
+    detail: str
+    created_at: str
+
+
 def _project_from_row(row) -> Project:
     return Project(**dict(row))
 
@@ -56,6 +69,10 @@ def _target_from_row(row) -> ProjectTarget:
 
 def _asset_from_row(row) -> Asset:
     return Asset(**dict(row))
+
+
+def _import_record_from_row(row) -> ImportRecord:
+    return ImportRecord(**dict(row))
 
 
 def validate_project(name: str, description: str) -> tuple[str, str]:
@@ -162,6 +179,16 @@ def list_targets(database_path: Path, project_id: int) -> list[ProjectTarget]:
     return [_target_from_row(row) for row in rows]
 
 
+def list_code_directories(database_path: Path, project_id: int) -> list[Path]:
+    """Return only project-authorized code roots for local file discovery."""
+
+    return [
+        Path(target.value)
+        for target in list_targets(database_path, project_id)
+        if target.target_type == "code_directory"
+    ]
+
+
 def add_target(database_path: Path, project_id: int, target_type: str, value: str) -> ProjectTarget:
     normalized_value = validate_target(target_type, value)
     try:
@@ -202,3 +229,36 @@ def add_asset(database_path: Path, project_id: int, asset_type: str, name: str, 
         raise
     assert row is not None
     return _asset_from_row(row)
+
+
+def record_import(
+    database_path: Path,
+    project_id: int,
+    source_kind: str,
+    source_path: str,
+    outcome: str,
+    detail: str,
+) -> ImportRecord:
+    """Persist a non-sensitive import outcome for a single project."""
+
+    if source_kind not in IMPORT_SOURCE_KINDS or outcome not in IMPORT_OUTCOMES:
+        raise ValueError("Unsupported import record values.")
+    with connect(database_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO import_records (project_id, source_kind, source_path, outcome, detail)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (project_id, source_kind, source_path, outcome, detail[:1_000]),
+        )
+        row = connection.execute("SELECT * FROM import_records WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    assert row is not None
+    return _import_record_from_row(row)
+
+
+def list_import_records(database_path: Path, project_id: int) -> list[ImportRecord]:
+    with connect(database_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM import_records WHERE project_id = ? ORDER BY id DESC LIMIT 50", (project_id,)
+        ).fetchall()
+    return [_import_record_from_row(row) for row in rows]

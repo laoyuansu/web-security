@@ -53,4 +53,19 @@
       </ul>
     </section>
   </div>
+  <section class="card form-card import-card" aria-labelledby="import-title">
+    <h2 id="import-title">从已登记目录导入</h2>
+    <p>仅读取目录根部的 OpenAPI、requirements.txt、package.json 与 Docker Compose 文件；不会递归扫描目录或访问网络。</p>
+    <form method="post" action="/projects/{{ project.id }}/imports">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">导入可用清单</button>
+    </form>
+    <ul class="item-list">
+      {% for record in import_records %}
+        <li><strong>{{ record.source_kind }} · {{ record.outcome }}</strong><span>{{ record.detail }}</span></li>
+      {% else %}
+        <li>尚未执行导入。</li>
+      {% endfor %}
+    </ul>
+  </section>
 {% endblock %}

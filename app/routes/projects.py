@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.discovery import import_registered_project_files
 from app.projects import (
     ASSET_TYPES,
     TARGET_TYPES,
@@ -15,6 +16,7 @@ from app.projects import (
     create_project,
     get_project,
     list_assets,
+    list_import_records,
     list_projects,
     list_targets,
 )
@@ -56,6 +58,7 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
                 "project": project,
                 "targets": list_targets(database_path(request), project_id),
                 "assets": list_assets(database_path(request), project_id),
+                "import_records": list_import_records(database_path(request), project_id),
                 "target_types": TARGET_TYPES,
                 "asset_types": ASSET_TYPES,
                 "csrf_token": issue_csrf_token(request),
@@ -137,6 +140,20 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
             )
         except ValidationError as error:
             return project_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/projects/{project_id}/imports", response_class=HTMLResponse)
+    async def import_project_files(request: Request, project_id: int):
+        """Import only known manifests from already-registered project directories."""
+
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        project_or_404(request, project_id)
+        form = await request.form()
+        if not form_is_valid(request, form):
+            return project_page(request, project_id, "请求已失效，请重试。", status.HTTP_403_FORBIDDEN)
+        import_registered_project_files(database_path(request), project_id)
         return RedirectResponse(f"/projects/{project_id}", status_code=status.HTTP_303_SEE_OTHER)
 
     return router

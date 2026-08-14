@@ -51,5 +51,17 @@ def initialize_database(database_path: Path) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(project_id, asset_type, name)
             );
+
+            CREATE TABLE IF NOT EXISTS import_records (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                source_kind TEXT NOT NULL CHECK (source_kind IN (
+                    'openapi', 'requirements', 'package_json', 'docker_compose'
+                )),
+                source_path TEXT NOT NULL,
+                outcome TEXT NOT NULL CHECK (outcome IN ('imported', 'skipped', 'error')),
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
