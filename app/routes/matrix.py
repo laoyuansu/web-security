@@ -8,10 +8,12 @@ from app.projects import (
     ValidationError,
     add_resource,
     add_role,
+    add_test_account_mapping,
     get_project,
     list_matrix_rows,
     list_resources,
     list_roles,
+    list_test_account_mappings,
     set_permission_rule,
 )
 from app.security.auth import csrf_token_is_valid, issue_csrf_token, login_required
@@ -32,6 +34,7 @@ def build_matrix_router(templates: Jinja2Templates) -> APIRouter:
                 "roles": list_roles(database_path, project_id),
                 "resources": list_resources(database_path, project_id),
                 "rules": list_matrix_rows(database_path, project_id),
+                "accounts": list_test_account_mappings(database_path, project_id),
                 "csrf_token": issue_csrf_token(request),
                 "error": error,
             },
@@ -88,6 +91,20 @@ def build_matrix_router(templates: Jinja2Templates) -> APIRouter:
             return error_page
         try:
             set_permission_rule(request.app.state.settings.database_path, project_id, int(form["role_id"]), int(form["resource_id"]), str(form.get("expected_access", "")))
+        except (KeyError, ValueError, ValidationError) as error:
+            return page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/matrix", status_code=303)
+
+    @router.post("/projects/{project_id}/matrix/accounts", response_class=HTMLResponse)
+    async def create_account_mapping(request: Request, project_id: int):
+        redirect = login_required(request)
+        if redirect:
+            return redirect
+        form, error_page = await form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            add_test_account_mapping(request.app.state.settings.database_path, project_id, int(form["role_id"]), str(form.get("account_name", "")), str(form.get("authentication_type", "")), str(form.get("credential_source", "")))
         except (KeyError, ValueError, ValidationError) as error:
             return page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
         return RedirectResponse(f"/projects/{project_id}/matrix", status_code=303)
