@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}项目与资产｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">仅登记明确授权的本地目标</p>
+      <h1>项目与资产</h1>
+      <p>登记不会触发扫描。后续检查只会使用这里登记的范围。</p>
+    </div>
+  </header>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <section class="card form-card" aria-labelledby="project-create-title">
+    <h2 id="project-create-title">创建项目</h2>
+    <form method="post" action="/projects">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="project-name">项目名称</label>
+      <input id="project-name" name="name" maxlength="120" required>
+      <label for="project-description">项目说明（可选）</label>
+      <textarea id="project-description" name="description" maxlength="1000"></textarea>
+      <button type="submit">创建本地项目</button>
+    </form>
+  </section>
+  <section class="card" aria-labelledby="project-list-title">
+    <h2 id="project-list-title">已登记项目</h2>
+    {% if projects %}
+      <ul class="item-list">
+        {% for project in projects %}
+          <li><a href="/projects/{{ project.id }}">{{ project.name }}</a><span>{{ project.description or '未填写说明' }}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>暂无项目。请先明确授权范围并创建项目。</p>
+    {% endif %}
+  </section>
+{% endblock %}

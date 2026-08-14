@@ -8,6 +8,12 @@
   </head>
   <body>
     <main class="container">
+      {% if request.session.get('authenticated') %}
+        <nav class="navigation" aria-label="主导航">
+          <a href="/dashboard">项目总览</a>
+          <a href="/projects">项目与资产</a>
+        </nav>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </body>

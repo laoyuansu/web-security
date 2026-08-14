@@ -26,6 +26,38 @@ body { margin: 0; }
 
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 
+.navigation { display: flex; gap: 16px; margin-bottom: 32px; font-weight: 600; }
+
+.navigation a, a { color: #174b88; }
+
+.form-card { padding: 24px; }
+
+.form-card textarea, .form-card select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #aab7c8;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+}
+
+.form-card textarea { min-height: 92px; resize: vertical; }
+
+.two-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+
+.item-list { padding: 0; list-style: none; }
+
+.item-list li { display: grid; gap: 4px; padding: 12px 0; border-top: 1px solid #d9e1ec; }
+
+.item-list span { color: #536276; overflow-wrap: anywhere; }
+
+.summary-card { margin-top: 24px; padding: 24px; }
+
+.summary-number { margin: 0; color: #174b88; font-size: 2rem; font-weight: 700; }
+
+.button-link { padding: 10px 16px; border: 1px solid #174b88; border-radius: 6px; text-decoration: none; }
+
 .notice { margin-top: 32px; padding: 20px; }
 
 .eyebrow { margin: 0 0 8px; color: #285ea8; font-size: .875rem; font-weight: 700; }
@@ -62,4 +94,5 @@ button.secondary { margin-top: 0; color: #174b88; background: #fff; }
 @media (max-width: 560px) {
   .container { padding: 28px 16px; }
   .page-header { flex-direction: column; }
+  .two-column { grid-template-columns: 1fr; }
 }

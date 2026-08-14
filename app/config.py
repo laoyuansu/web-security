@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class Settings:
     admin_username: str
     admin_password: str
     session_secret: str
+    database_path: Path
 
 
 def _required_environment_value(name: str, minimum_length: int) -> str:
@@ -54,4 +56,8 @@ def get_settings() -> Settings:
         admin_username=admin_username,
         admin_password=_required_environment_value("APP_ADMIN_PASSWORD", 12),
         session_secret=_required_environment_value("APP_SESSION_SECRET", 32),
+        database_path=(
+            Path(os.getenv("APP_DATA_DIRECTORY", Path(__file__).resolve().parent.parent / "data"))
+            / "workbench.sqlite3"
+        ).resolve(),
     )

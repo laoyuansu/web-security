@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
@@ -12,6 +13,9 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import Settings, get_settings
+from app.database import initialize_database
+from app.projects import list_projects
+from app.routes.projects import build_project_router
 from app.security.auth import (
     csrf_token_is_valid,
     establish_authenticated_session,
@@ -28,7 +32,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Create an app that fails closed when required local secrets are missing."""
 
     active_settings = settings or get_settings()
-    application = FastAPI(title="本地 Web 安全自查与修复台", docs_url=None, redoc_url=None)
+    @asynccontextmanager
+    async def lifespan(_application: FastAPI):
+        initialize_database(active_settings.database_path)
+        yield
+
+    application = FastAPI(
+        title="本地 Web 安全自查与修复台",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
     application.state.settings = active_settings
     application.add_middleware(
         SessionMiddleware,
@@ -40,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.mount("/static", StaticFiles(directory=APPLICATION_DIRECTORY / "static"), name="static")
     templates = Jinja2Templates(directory=str(APPLICATION_DIRECTORY / "templates"))
+    application.include_router(build_project_router(templates))
 
     @application.middleware("http")
     async def apply_security_headers(request: Request, call_next):
@@ -116,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context={
                 "csrf_token": issue_csrf_token(request),
                 "username": request.session.get("username", active_settings.admin_username),
+                "projects": list_projects(active_settings.database_path),
             },
         )
 

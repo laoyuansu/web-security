@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }}｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">项目范围</p>
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.description or '未填写说明' }}</p>
+    </div>
+    <a class="button-link" href="/projects">返回项目列表</a>
+  </header>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <div class="two-column">
+    <section class="card form-card" aria-labelledby="target-title">
+      <h2 id="target-title">允许测试目标</h2>
+      <p>仅支持存在的非根代码目录、localhost/127.0.0.1 URL 与 Docker 网桥地址。</p>
+      <form method="post" action="/projects/{{ project.id }}/targets">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="target-type">目标类型</label>
+        <select id="target-type" name="target_type">
+          <option value="code_directory">代码目录</option>
+          <option value="local_url">本地 URL</option>
+          <option value="docker_address">Docker 网桥地址</option>
+        </select>
+        <label for="target-value">目录或地址</label>
+        <input id="target-value" name="value" required>
+        <button type="submit">登记目标</button>
+      </form>
+      <ul class="item-list">
+        {% for target in targets %}<li><strong>{{ target.target_type }}</strong><span>{{ target.value }}</span></li>{% else %}<li>暂无允许目标。</li>{% endfor %}
+      </ul>
+    </section>
+    <section class="card form-card" aria-labelledby="asset-title">
+      <h2 id="asset-title">资产清单</h2>
+      <form method="post" action="/projects/{{ project.id }}/assets">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="asset-type">资产类型</label>
+        <select id="asset-type" name="asset_type">
+          <option value="page">页面</option>
+          <option value="api">API</option>
+          <option value="data_type">数据类型</option>
+          <option value="dependency">依赖</option>
+          <option value="docker_service">Docker 服务</option>
+        </select>
+        <label for="asset-name">名称</label>
+        <input id="asset-name" name="name" maxlength="160" required>
+        <label for="asset-value">说明或位置（可选）</label>
+        <textarea id="asset-value" name="value" maxlength="1000"></textarea>
+        <button type="submit">添加资产</button>
+      </form>
+      <ul class="item-list">
+        {% for asset in assets %}<li><strong>{{ asset.asset_type }} · {{ asset.name }}</strong><span>{{ asset.value or '未填写说明' }}</span></li>{% else %}<li>暂无资产。</li>{% endfor %}
+      </ul>
+    </section>
+  </div>
+{% endblock %}

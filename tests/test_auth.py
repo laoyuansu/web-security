@@ -4,24 +4,29 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-# app.main creates the production ASGI object at import time. These non-secret
-# test-only values let this module import while each test still injects its own settings.
-os.environ.setdefault("APP_ADMIN_PASSWORD", "test-only-password")
-os.environ.setdefault("APP_SESSION_SECRET", "s" * 32)
 
-from app.config import Settings
-from app.main import create_app
+def create_test_app(database_path: Path):
+    """Create an isolated app after supplying non-secret test-only values."""
 
-TEST_SETTINGS = Settings(
-    host="127.0.0.1",
-    port=8000,
-    admin_username="local-admin",
-    admin_password="test-only-password",
-    session_secret="s" * 32,
-)
+    os.environ["APP_ADMIN_PASSWORD"] = "test-only-password"
+    os.environ["APP_SESSION_SECRET"] = "s" * 32
+    from app.config import Settings
+    from app.main import create_app
+
+    return create_app(
+        Settings(
+            host="127.0.0.1",
+            port=8000,
+            admin_username="local-admin",
+            admin_password="test-only-password",
+            session_secret="s" * 32,
+            database_path=database_path,
+        )
+    )
 
 
 def _csrf_token(response_text: str) -> str:
@@ -30,16 +35,16 @@ def _csrf_token(response_text: str) -> str:
     return match.group(1)
 
 
-def test_dashboard_requires_login() -> None:
-    with TestClient(create_app(TEST_SETTINGS)) as client:
+def test_dashboard_requires_login(tmp_path: Path) -> None:
+    with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
         response = client.get("/dashboard", follow_redirects=False)
 
     assert response.status_code == 303
     assert response.headers["location"] == "/login"
 
 
-def test_login_and_logout_flow() -> None:
-    with TestClient(create_app(TEST_SETTINGS)) as client:
+def test_login_and_logout_flow(tmp_path: Path) -> None:
+    with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
         login_page = client.get("/login")
         login_response = client.post(
             "/login",
@@ -62,8 +67,8 @@ def test_login_and_logout_flow() -> None:
         assert client.get("/dashboard", follow_redirects=False).status_code == 303
 
 
-def test_login_rejects_invalid_csrf_token() -> None:
-    with TestClient(create_app(TEST_SETTINGS)) as client:
+def test_login_rejects_invalid_csrf_token(tmp_path: Path) -> None:
+    with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
         response = client.post(
             "/login",
             data={"csrf_token": "invalid", "username": "local-admin", "password": "test-only-password"},
