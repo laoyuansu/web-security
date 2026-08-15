@@ -26,6 +26,12 @@ SECRET_SIGNATURES = {
     "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 }
+HISTORY_SECRET_PATTERNS = {
+    "OpenAI-like key": r"sk-[A-Za-z0-9_-]{20,}",
+    "GitHub token": r"(ghp_|github_pat_)[A-Za-z0-9_]{20,}",
+    "AWS access key": r"AKIA[0-9A-Z]{16}",
+    "private key": r"PRIVATE KEY-----",
+}
 
 
 def _source_files(directory: Path):
@@ -38,6 +44,62 @@ def _source_files(directory: Path):
 
 def _add_finding(database_path: Path, project_id: int, run_id: int, **finding) -> None:
     record_finding(database_path, project_id, run_id, **finding)
+
+
+def _git_history_secret_hits(
+    database_path: Path, project_id: int, run_id: int, directories: list[Path]
+) -> tuple[int, list[str]]:
+    """Search authorized Git histories by signature and commit hash, never by patch content."""
+
+    hits = 0
+    skipped = []
+    for directory in directories:
+        try:
+            repository = subprocess.run(
+                ["git", "-C", str(directory), "rev-parse", "--is-inside-work-tree"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            skipped.append(f"{directory.name} 的 Git 历史检查已跳过：Git 不可用或超时。")
+            continue
+        if repository.returncode != 0 or repository.stdout.strip() != "true":
+            skipped.append(f"{directory.name} 的 Git 历史检查已跳过：目录不是 Git 仓库。")
+            continue
+        for label, pattern in HISTORY_SECRET_PATTERNS.items():
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(directory), "log", "--all", "--format=%H", f"-G{pattern}", "--", "."],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                skipped.append(f"{directory.name} 的 Git 历史检查已跳过：签名搜索失败或超时。")
+                break
+            if result.returncode != 0:
+                skipped.append(f"{directory.name} 的 Git 历史检查已跳过：签名搜索未成功完成。")
+                break
+            for commit_hash in set(result.stdout.splitlines()):
+                if not commit_hash:
+                    continue
+                hits += 1
+                _add_finding(
+                    database_path,
+                    project_id,
+                    run_id,
+                    title="Git 历史存在疑似密钥泄露",
+                    module="Git 历史",
+                    finding_type="secret_leak",
+                    severity="high",
+                    evidence=f"{label} 命中提交 {commit_hash[:12]}；匹配值已脱敏。",
+                    expected="Git 历史不包含真实密钥。",
+                    actual="检测到疑似密钥签名。",
+                )
+    return hits, skipped
 
 
 def _run_secret_check(database_path: Path, project_id: int, run_id: int, directories: list[Path]) -> None:
@@ -67,7 +129,11 @@ def _run_secret_check(database_path: Path, project_id: int, run_id: int, directo
                             expected="代码与配置中不包含真实密钥。",
                             actual="检测到疑似密钥签名。",
                         )
-    record_check_result(database_path, run_id, "secret_leak", "passed", f"已检查，发现 {hits} 项待确认结果。")
+    history_hits, skipped = _git_history_secret_hits(database_path, project_id, run_id, directories)
+    detail = f"已检查工作树与 Git 历史，发现 {hits + history_hits} 项待确认结果。"
+    if skipped:
+        detail += " " + " ".join(skipped)
+    record_check_result(database_path, run_id, "secret_leak", "passed", detail)
 
 
 def _run_dependency_check(database_path: Path, project_id: int, run_id: int, directories: list[Path]) -> None:

@@ -45,3 +45,21 @@
 - `.\.venv\Scripts\python.exe -c "from app.discovery import discover_runtime_assets; ..."`：候选数为 1；跳过数为 1（Docker 发现命令未成功完成）。
 - `.\.venv\Scripts\python.exe -m pytest`：28 passed，1 条第三方弃用警告。
 - `.\.venv\Scripts\python.exe -m ruff check .` 与 `git diff --check`：通过。
+
+## 小项目：Git 历史密钥自查
+
+状态：已验证，待提交。
+
+### 监测目标与实际证据
+
+| 目标 | 可观察通过条件 | 实际证据 |
+| --- | --- | --- |
+| Git 历史覆盖 | 已登记 Git 目录的完整历史按签名检查 | `tests/test_checks.py::test_checks_detect_redacted_secret_signatures_in_authorized_git_history` 通过。 |
+| 脱敏 | 发现只包含类型和提交哈希，不包含匹配值 | 同一测试确认测试形态不出现在证据中。 |
+| 降级 | 无 Git 或失败时保留跳过原因而不中断其他检查 | 实现与既有无目标跳过测试覆盖该路径。 |
+
+### 实际验证
+
+- 使用 `.pytest_cache/final-audit.sqlite3` 的临时项目对当前工作树运行离线检查：`secret_leak`、`dependency`、`configuration` 为 passed；未登记 URL 的 `http_baseline` 为 skipped。
+- 当前 Git 历史检测到 2 个测试形态签名；均在临时终验记录中标为 `false_positive`，未保存匹配值。
+- `.\.venv\Scripts\python.exe -m pytest`：29 passed，1 条第三方弃用警告；`.\.venv\Scripts\python.exe -m ruff check .` 与 `git diff --check`：通过。
