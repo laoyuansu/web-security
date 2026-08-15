@@ -63,3 +63,15 @@
 - 使用 `.pytest_cache/final-audit.sqlite3` 的临时项目对当前工作树运行离线检查：`secret_leak`、`dependency`、`configuration` 为 passed；未登记 URL 的 `http_baseline` 为 skipped。
 - 当前 Git 历史检测到 2 个测试形态签名；均在临时终验记录中标为 `false_positive`，未保存匹配值。
 - `.\.venv\Scripts\python.exe -m pytest`：29 passed，1 条第三方弃用警告；`.\.venv\Scripts\python.exe -m ruff check .` 与 `git diff --check`：通过。
+
+## 小项目：HTTP 安全基线回归
+
+状态：已验证，待提交。
+
+### 监测目标与实际证据
+
+| 目标 | 可观察通过条件 | 实际证据 |
+| --- | --- | --- |
+| 已登记目标请求 | 仅对登记的回环 URL 发起 HTTP 请求 | `tests/test_checks.py::test_http_baseline_requests_only_a_registered_loopback_service` 在临时 `127.0.0.1` 服务上通过。 |
+| 安全响应头 | 三项基线响应头均存在时记录通过且不创建 HTTP 基线发现 | 同一测试通过。 |
+| 回归 | 全部测试、静态检查和差异检查通过 | `.\.venv\Scripts\python.exe -m pytest`：30 passed；Ruff 与 `git diff --check`：通过。 |

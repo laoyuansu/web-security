@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import subprocess
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 from app.checks import run_project_checks
 from app.database import initialize_database
@@ -21,6 +23,18 @@ from app.projects import (
     update_remediation_task_status,
 )
 from app.reports import build_markdown_report, build_redacted_backup, import_redacted_backup
+
+
+class _SecureLocalHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "default-src 'self'")
+        self.end_headers()
+
+    def log_message(self, format: str, *args) -> None:
+        return
 
 
 def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path: Path) -> None:
@@ -72,6 +86,28 @@ def test_checks_skip_unregistered_targets(tmp_path: Path) -> None:
     results = list_check_results(database_path, project.id)
     assert len(results) == 4
     assert {result.outcome for result in results} == {"skipped"}
+
+
+def test_http_baseline_requests_only_a_registered_loopback_service(tmp_path: Path) -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _SecureLocalHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        database_path = tmp_path / "workbench.sqlite3"
+        initialize_database(database_path)
+        project = create_project(database_path, "HTTP 基线项目", "")
+        add_target(database_path, project.id, "local_url", f"http://127.0.0.1:{server.server_port}")
+
+        run_project_checks(database_path, project.id)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    results = list_check_results(database_path, project.id)
+    http_result = next(item for item in results if item.check_type == "http_baseline")
+    assert http_result.outcome == "passed"
+    assert not any(item.finding_type == "http_baseline" for item in list_findings(database_path, project.id))
 
 
 def test_checks_detect_redacted_secret_signatures_in_authorized_git_history(tmp_path: Path) -> None:
