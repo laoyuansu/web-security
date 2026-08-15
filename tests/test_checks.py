@@ -7,13 +7,17 @@ from pathlib import Path
 from app.checks import run_project_checks
 from app.database import initialize_database
 from app.projects import (
+    ValidationError,
     add_target,
     create_project,
     create_remediation_task,
+    delete_project,
     list_check_results,
     list_findings,
     list_remediation_tasks,
+    record_regression_verification,
     update_finding_status,
+    update_remediation_task_status,
 )
 from app.reports import build_markdown_report, build_redacted_backup, import_redacted_backup
 
@@ -39,10 +43,21 @@ def test_checks_record_redacted_secret_finding_for_registered_directory(tmp_path
     update_finding_status(database_path, project.id, findings[0].id, "confirmed")
     create_remediation_task(database_path, findings[0].id, "测试根因", "测试修复建议")
     assert list_remediation_tasks(database_path, project.id)[0].finding_id == findings[0].id
+    update_remediation_task_status(database_path, project.id, findings[0].id, "done")
+    try:
+        update_finding_status(database_path, project.id, findings[0].id, "fixed")
+    except ValidationError as error:
+        assert "回归验证" in str(error)
+    else:
+        raise AssertionError("Fixed findings must require a passed regression verification.")
+    record_regression_verification(database_path, project.id, findings[0].id, "passed", "自动化回归通过，未记录凭据。")
+    update_finding_status(database_path, project.id, findings[0].id, "fixed")
     assert "安全自查报告" in build_markdown_report(database_path, project.id)
     assert '"credential_data_included": false' in build_redacted_backup(database_path, project.id)
     imported = import_redacted_backup(database_path, build_redacted_backup(database_path, project.id))
     assert imported.name.endswith("（导入）")
+    duplicate_import = import_redacted_backup(database_path, build_redacted_backup(database_path, project.id))
+    assert duplicate_import.name.endswith("（导入） 2")
 
 
 def test_checks_skip_unregistered_targets(tmp_path: Path) -> None:
@@ -55,3 +70,16 @@ def test_checks_skip_unregistered_targets(tmp_path: Path) -> None:
     results = list_check_results(database_path, project.id)
     assert len(results) == 4
     assert {result.outcome for result in results} == {"skipped"}
+
+
+def test_project_deletion_requires_an_exact_project_name(tmp_path: Path) -> None:
+    database_path = tmp_path / "workbench.sqlite3"
+    initialize_database(database_path)
+    project = create_project(database_path, "待删除项目", "")
+    try:
+        delete_project(database_path, project.id, "错误名称")
+    except ValidationError:
+        pass
+    else:
+        raise AssertionError("Deletion must require an exact confirmation name.")
+    delete_project(database_path, project.id, "待删除项目")

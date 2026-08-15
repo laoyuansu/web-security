@@ -6,6 +6,7 @@ from app.database import initialize_database
 from app.projects import (
     add_resource,
     add_role,
+    add_target,
     add_test_account_mapping,
     create_project,
     list_matrix_rows,
@@ -27,5 +28,6 @@ def test_permission_rules_are_project_scoped(tmp_path: Path) -> None:
     set_permission_rule(database_path, project.id, role_id, resource_id, "allow")
 
     assert list_matrix_rows(database_path, project.id)[0].expected_access == "allow"
-    add_test_account_mapping(database_path, project.id, role_id, "admin-test", "cookie", "runtime")
+    add_target(database_path, project.id, "local_url", "http://127.0.0.1:8101")
+    add_test_account_mapping(database_path, project.id, role_id, "admin-test", "http://127.0.0.1:8101", "cookie", "runtime")
     assert list_test_account_mappings(database_path, project.id)[0].account_name == "admin-test"

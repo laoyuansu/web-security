@@ -15,13 +15,20 @@ from app.projects import (
     add_asset,
     add_target,
     create_project,
+    create_remediation_task,
+    delete_project,
     get_project,
     list_assets,
     list_check_results,
     list_findings,
     list_import_records,
     list_projects,
+    list_regression_verifications,
+    list_remediation_tasks,
     list_targets,
+    record_regression_verification,
+    update_finding_status,
+    update_remediation_task_status,
 )
 from app.security.auth import csrf_token_is_valid, issue_csrf_token, login_required
 
@@ -72,6 +79,22 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
             status_code=response_status,
         )
 
+    def findings_page(request: Request, project_id: int, error: str | None = None, response_status: int = 200):
+        project = project_or_404(request, project_id)
+        return templates.TemplateResponse(
+            request=request,
+            name="findings.html",
+            context={
+                "project": project,
+                "findings": list_findings(database_path(request), project_id),
+                "tasks": list_remediation_tasks(database_path(request), project_id),
+                "verifications": list_regression_verifications(database_path(request), project_id),
+                "csrf_token": issue_csrf_token(request),
+                "error": error,
+            },
+            status_code=response_status,
+        )
+
     def form_is_valid(request: Request, form) -> bool:
         token = form.get("csrf_token")
         return csrf_token_is_valid(request, token if isinstance(token, str) else None)
@@ -99,12 +122,111 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
             return projects_page(request, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
         return RedirectResponse(f"/projects/{project.id}", status_code=status.HTTP_303_SEE_OTHER)
 
+    @router.post("/projects/{project_id}/delete", response_class=HTMLResponse)
+    async def delete_registered_project(request: Request, project_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        project_or_404(request, project_id)
+        form = await request.form()
+        if not form_is_valid(request, form):
+            return project_page(request, project_id, "请求已失效，请重试。", status.HTTP_403_FORBIDDEN)
+        try:
+            delete_project(database_path(request), project_id, str(form.get("confirmation_name", "")))
+        except ValidationError as error:
+            return project_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse("/projects", status_code=status.HTTP_303_SEE_OTHER)
+
     @router.get("/projects/{project_id}", response_class=HTMLResponse)
     async def project_detail(request: Request, project_id: int):
         redirect = login_required(request)
         if redirect is not None:
             return redirect
         return project_page(request, project_id)
+
+    @router.get("/projects/{project_id}/findings", response_class=HTMLResponse)
+    async def findings(request: Request, project_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        return findings_page(request, project_id)
+
+    async def finding_form_or_error(request: Request, project_id: int):
+        form = await request.form()
+        if not form_is_valid(request, form):
+            return None, findings_page(request, project_id, "请求已失效，请重试。", status.HTTP_403_FORBIDDEN)
+        return form, None
+
+    @router.post("/projects/{project_id}/findings/{finding_id}/status", response_class=HTMLResponse)
+    async def change_finding_status(request: Request, project_id: int, finding_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        form, error_page = await finding_form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            update_finding_status(database_path(request), project_id, finding_id, str(form.get("status", "")))
+        except ValidationError as error:
+            return findings_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/findings", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/projects/{project_id}/findings/{finding_id}/tasks", response_class=HTMLResponse)
+    async def create_finding_task(request: Request, project_id: int, finding_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        project_or_404(request, project_id)
+        form, error_page = await finding_form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            update_finding_status(database_path(request), project_id, finding_id, "confirmed")
+            create_remediation_task(
+                database_path(request),
+                finding_id,
+                str(form.get("root_cause", "")),
+                str(form.get("recommendation", "")),
+                str(form.get("owner", "")),
+                str(form.get("due_date", "")),
+            )
+        except ValidationError as error:
+            return findings_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/findings", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/projects/{project_id}/findings/{finding_id}/tasks/status", response_class=HTMLResponse)
+    async def change_task_status(request: Request, project_id: int, finding_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        form, error_page = await finding_form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            update_remediation_task_status(database_path(request), project_id, finding_id, str(form.get("status", "")))
+        except ValidationError as error:
+            return findings_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/findings", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/projects/{project_id}/findings/{finding_id}/verifications", response_class=HTMLResponse)
+    async def create_regression_verification(request: Request, project_id: int, finding_id: int):
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        form, error_page = await finding_form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            record_regression_verification(
+                database_path(request),
+                project_id,
+                finding_id,
+                str(form.get("outcome", "")),
+                str(form.get("detail", "")),
+            )
+        except ValidationError as error:
+            return findings_page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/findings", status_code=status.HTTP_303_SEE_OTHER)
 
     @router.post("/projects/{project_id}/targets", response_class=HTMLResponse)
     async def add_project_target(request: Request, project_id: int):

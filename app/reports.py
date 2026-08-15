@@ -13,6 +13,8 @@ from app.projects import (
     list_check_results,
     list_findings,
     list_import_records,
+    list_projects,
+    list_regression_verifications,
     list_remediation_tasks,
 )
 
@@ -31,7 +33,14 @@ def import_redacted_backup(database_path: Path, source_text: str):
     project_data = document.get("project")
     if not isinstance(project_data, dict):
         raise TypeError("备份缺少项目元数据。")
-    project = create_project(database_path, str(project_data.get("name", "")).strip() + "（导入）", str(project_data.get("description", "")))
+    base_name = str(project_data.get("name", "")).strip() + "（导入）"
+    existing_names = {project.name for project in list_projects(database_path)}
+    imported_name = base_name
+    suffix = 2
+    while imported_name in existing_names:
+        imported_name = f"{base_name} {suffix}"
+        suffix += 1
+    project = create_project(database_path, imported_name, str(project_data.get("description", "")))
     for asset in document.get("assets", []):
         if isinstance(asset, dict):
             add_asset(database_path, project.id, str(asset.get("type", "")), str(asset.get("name", "")), str(asset.get("value", "")))
@@ -45,9 +54,38 @@ def build_markdown_report(database_path: Path, project_id: int) -> str:
     lines = [f"# 安全自查报告：{project.name}", "", "## 检查结果"]
     lines += [f"- {item.check_type}: {item.outcome} — {item.detail}" for item in list_check_results(database_path, project_id)] or ["- 暂无检查记录。"]
     lines += ["", "## 发现"]
-    lines += [f"- [{item.severity}] {item.title}（{item.status}）：{item.evidence}" for item in list_findings(database_path, project_id)] or ["- 暂无发现。"]
-    lines += ["", "## 修复任务"]
-    lines += [f"- 发现 #{item.finding_id}: {item.status}，{item.recommendation}" for item in list_remediation_tasks(database_path, project_id)] or ["- 暂无修复任务。"]
+    findings = list_findings(database_path, project_id)
+    tasks = {item.finding_id: item for item in list_remediation_tasks(database_path, project_id)}
+    verifications: dict[int, list] = {}
+    for verification in list_regression_verifications(database_path, project_id):
+        verifications.setdefault(verification.finding_id, []).append(verification)
+    if not findings:
+        lines += ["- 暂无发现。"]
+    for item in findings:
+        lines += [
+            f"### [{item.severity}] {item.title}",
+            f"- 状态：{item.status}",
+            f"- 受影响模块：{item.module}",
+            f"- 发现类型：{item.finding_type}",
+            f"- 证据与时间：{item.evidence}（{item.created_at}）",
+            f"- 预期行为：{item.expected}",
+            f"- 实际行为：{item.actual}",
+        ]
+        task = tasks.get(item.id)
+        if task:
+            lines += [
+                f"- 根因：{task.root_cause}",
+                f"- 修复建议：{task.recommendation}",
+                f"- 负责人/截止时间：{task.owner or '未分配'} / {task.due_date or '未设置'}",
+                f"- 修复任务状态：{task.status}",
+            ]
+        else:
+            lines += ["- 根因与修复建议：尚未创建修复任务。"]
+        current_verifications = verifications.get(item.id, [])
+        lines += [
+            f"- 回归验证：{verification.outcome} — {verification.detail}（{verification.created_at}）"
+            for verification in current_verifications
+        ] or ["- 回归验证：暂无记录。"]
     lines += ["", "## 导入历史"]
     lines += [f"- {item.source_kind}: {item.outcome} — {item.detail}" for item in list_import_records(database_path, project_id)] or ["- 暂无导入记录。"]
     return "\n".join(lines) + "\n"

@@ -111,6 +111,14 @@ def initialize_database(database_path: Path) -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS regression_verifications (
+                id INTEGER PRIMARY KEY,
+                finding_id INTEGER NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+                outcome TEXT NOT NULL CHECK (outcome IN ('passed', 'failed', 'skipped')),
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS roles (
                 id INTEGER PRIMARY KEY,
                 project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -141,9 +149,36 @@ def initialize_database(database_path: Path) -> None:
                 project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                 role_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
                 account_name TEXT NOT NULL,
+                target_url TEXT NOT NULL DEFAULT '',
                 authentication_type TEXT NOT NULL CHECK (authentication_type IN ('cookie', 'bearer')),
                 credential_source TEXT NOT NULL CHECK (credential_source IN ('vault', 'runtime')),
                 UNIQUE(project_id, role_id, account_name)
             );
+
+            CREATE TABLE IF NOT EXISTS permission_regression_runs (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed')),
+                started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                finished_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS permission_regression_results (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL REFERENCES permission_regression_runs(id) ON DELETE CASCADE,
+                role_name TEXT NOT NULL,
+                account_name TEXT NOT NULL,
+                target_url TEXT NOT NULL,
+                method TEXT NOT NULL,
+                endpoint TEXT NOT NULL,
+                expected_access TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                status_code INTEGER,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
+        mapping_columns = {row["name"] for row in connection.execute("PRAGMA table_info(test_account_mappings)")}
+        if "target_url" not in mapping_columns:
+            connection.execute("ALTER TABLE test_account_mappings ADD COLUMN target_url TEXT NOT NULL DEFAULT ''")

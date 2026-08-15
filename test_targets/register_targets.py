@@ -106,6 +106,7 @@ def register_targets(database_path: Path) -> int:
                     project_id,
                     role_ids[role],
                     account_name,
+                    "http://127.0.0.1:8101" if target_name == "fastapi" else "http://127.0.0.1:8102",
                     authentication_type,
                     "runtime",
                 )

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.matrix_runner import run_permission_matrix
 from app.projects import (
     ValidationError,
     add_resource,
@@ -11,8 +12,10 @@ from app.projects import (
     add_test_account_mapping,
     get_project,
     list_matrix_rows,
+    list_permission_regression_results,
     list_resources,
     list_roles,
+    list_targets,
     list_test_account_mappings,
     set_permission_rule,
 )
@@ -35,6 +38,8 @@ def build_matrix_router(templates: Jinja2Templates) -> APIRouter:
                 "resources": list_resources(database_path, project_id),
                 "rules": list_matrix_rows(database_path, project_id),
                 "accounts": list_test_account_mappings(database_path, project_id),
+                "local_urls": [target.value for target in list_targets(database_path, project_id) if target.target_type == "local_url"],
+                "regression_results": list_permission_regression_results(database_path, project_id),
                 "csrf_token": issue_csrf_token(request),
                 "error": error,
             },
@@ -104,8 +109,22 @@ def build_matrix_router(templates: Jinja2Templates) -> APIRouter:
         if error_page:
             return error_page
         try:
-            add_test_account_mapping(request.app.state.settings.database_path, project_id, int(form["role_id"]), str(form.get("account_name", "")), str(form.get("authentication_type", "")), str(form.get("credential_source", "")))
+            add_test_account_mapping(request.app.state.settings.database_path, project_id, int(form["role_id"]), str(form.get("account_name", "")), str(form.get("target_url", "")), str(form.get("authentication_type", "")), str(form.get("credential_source", "")))
         except (KeyError, ValueError, ValidationError) as error:
+            return page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return RedirectResponse(f"/projects/{project_id}/matrix", status_code=303)
+
+    @router.post("/projects/{project_id}/matrix/run", response_class=HTMLResponse)
+    async def run_matrix(request: Request, project_id: int):
+        redirect = login_required(request)
+        if redirect:
+            return redirect
+        _form, error_page = await form_or_error(request, project_id)
+        if error_page:
+            return error_page
+        try:
+            run_permission_matrix(request.app.state.settings.database_path, project_id)
+        except (ValueError, ValidationError) as error:
             return page(request, project_id, str(error), status.HTTP_422_UNPROCESSABLE_CONTENT)
         return RedirectResponse(f"/projects/{project_id}/matrix", status_code=303)
 

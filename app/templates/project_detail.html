@@ -54,6 +54,7 @@
     </section>
   </div>
   <p><a class="button-link" href="/projects/{{ project.id }}/matrix">配置权限矩阵</a></p>
+  <p><a class="button-link" href="/projects/{{ project.id }}/findings">发现、修复与回归</a></p>
   <p><a class="button-link" href="/projects/{{ project.id }}/report">报告与备份</a></p>
   <section class="card form-card import-card" aria-labelledby="import-title">
     <h2 id="import-title">从已登记目录导入</h2>
@@ -90,5 +91,15 @@
         <li><strong>{{ finding.severity }} · {{ finding.title }}</strong><span>{{ finding.evidence }}</span></li>
       {% else %}<li>暂无发现。</li>{% endfor %}
     </ul>
+  </section>
+  <section class="card form-card" aria-labelledby="delete-title">
+    <h2 id="delete-title">删除项目历史</h2>
+    <p>删除会清除该项目的资产、检查、发现、任务和回归记录，且无法恢复。</p>
+    <form method="post" action="/projects/{{ project.id }}/delete">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="confirmation-name">输入完整项目名称以确认</label>
+      <input id="confirmation-name" name="confirmation_name" maxlength="120" required>
+      <button type="submit">删除本地项目历史</button>
+    </form>
   </section>
 {% endblock %}

@@ -141,3 +141,154 @@ def test_assets_are_isolated_by_project(tmp_path: Path) -> None:
         second_project_page = client.get(f"/projects/{second_project_id}")
 
     assert "fastapi" not in second_project_page.text
+
+
+def test_matrix_routes_save_rules_and_skip_unmapped_accounts(tmp_path: Path) -> None:
+    database_path = tmp_path / "workbench.sqlite3"
+    with TestClient(create_test_app(database_path)) as client:
+        login(client)
+        project_id = create_project(client, "矩阵路由")
+        page = client.get(f"/projects/{project_id}/matrix")
+        role_response = client.post(
+            f"/projects/{project_id}/matrix/roles",
+            data={"csrf_token": csrf_token(page.text), "name": "测试角色"},
+            follow_redirects=False,
+        )
+        assert role_response.status_code == 303
+
+        page = client.get(f"/projects/{project_id}/matrix")
+        resource_response = client.post(
+            f"/projects/{project_id}/matrix/resources",
+            data={
+                "csrf_token": csrf_token(page.text),
+                "name": "测试资源",
+                "method": "GET",
+                "endpoint": "/api/testing",
+            },
+            follow_redirects=False,
+        )
+        assert resource_response.status_code == 303
+
+        from app.projects import list_resources, list_roles
+
+        role_id = list_roles(database_path, project_id)[0]["id"]
+        resource_id = list_resources(database_path, project_id)[0]["id"]
+        page = client.get(f"/projects/{project_id}/matrix")
+        rule_response = client.post(
+            f"/projects/{project_id}/matrix/rules",
+            data={
+                "csrf_token": csrf_token(page.text),
+                "role_id": role_id,
+                "resource_id": resource_id,
+                "expected_access": "deny",
+            },
+            follow_redirects=False,
+        )
+        assert rule_response.status_code == 303
+
+        page = client.get(f"/projects/{project_id}/matrix")
+        run_response = client.post(
+            f"/projects/{project_id}/matrix/run",
+            data={"csrf_token": csrf_token(page.text)},
+            follow_redirects=False,
+        )
+
+    assert run_response.status_code == 303
+
+
+def test_findings_page_requires_regression_before_closing_a_finding(tmp_path: Path) -> None:
+    database_path = tmp_path / "workbench.sqlite3"
+    with TestClient(create_test_app(database_path)) as client:
+        login(client)
+        project_id = create_project(client, "修复闭环")
+        from app.projects import create_check_run, finish_check_run, record_finding
+
+        run_id = create_check_run(database_path, project_id)
+        record_finding(
+            database_path,
+            project_id,
+            run_id,
+            "测试发现",
+            "api/orders",
+            "permission_matrix",
+            "high",
+            "仅测试用的非敏感证据。",
+            "拒绝无权访问。",
+            "测试结果待确认。",
+        )
+        finish_check_run(database_path, run_id)
+        page = client.get(f"/projects/{project_id}/findings")
+        assert "测试发现" in page.text
+
+        task_response = client.post(
+            f"/projects/{project_id}/findings/1/tasks",
+            data={
+                "csrf_token": csrf_token(page.text),
+                "root_cause": "测试根因",
+                "recommendation": "测试修复建议",
+                "owner": "本地负责人",
+                "due_date": "2026-08-16",
+            },
+            follow_redirects=False,
+        )
+        assert task_response.status_code == 303
+
+        page = client.get(f"/projects/{project_id}/findings")
+        premature_close = client.post(
+            f"/projects/{project_id}/findings/1/status",
+            data={"csrf_token": csrf_token(page.text), "status": "fixed"},
+        )
+        assert premature_close.status_code == 422
+        assert "回归验证" in premature_close.text
+
+        page = client.get(f"/projects/{project_id}/findings")
+        verification_response = client.post(
+            f"/projects/{project_id}/findings/1/verifications",
+            data={
+                "csrf_token": csrf_token(page.text),
+                "outcome": "passed",
+                "detail": "自动化回归通过，未记录凭据。",
+            },
+            follow_redirects=False,
+        )
+        assert verification_response.status_code == 303
+
+        page = client.get(f"/projects/{project_id}/findings")
+        close_response = client.post(
+            f"/projects/{project_id}/findings/1/status",
+            data={"csrf_token": csrf_token(page.text), "status": "fixed"},
+            follow_redirects=False,
+        )
+        assert close_response.status_code == 303
+        assert "fixed" in client.get(f"/projects/{project_id}/findings").text
+
+
+def test_report_page_imports_only_a_redacted_json_backup(tmp_path: Path) -> None:
+    with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
+        login(client)
+        project_id = create_project(client, "备份来源")
+        backup = client.get(f"/projects/{project_id}/backup.json")
+        report_page = client.get(f"/projects/{project_id}/report")
+        imported = client.post(
+            f"/projects/{project_id}/backup/import",
+            data={"csrf_token": csrf_token(report_page.text)},
+            files={"backup_file": ("backup.json", backup.content, "application/json")},
+            follow_redirects=False,
+        )
+        assert imported.status_code == 303
+        assert "（导入）" in client.get(imported.headers["location"]).text
+
+        report_page = client.get(f"/projects/{project_id}/report")
+        rejected = client.post(
+            f"/projects/{project_id}/backup/import",
+            data={"csrf_token": csrf_token(report_page.text)},
+            files={
+                "backup_file": (
+                    "unsafe.json",
+                    b'{"format":"local-web-security-workbench-backup-v1","credential_data_included":false,"token":"not-allowed"}',
+                    "application/json",
+                )
+            },
+        )
+        assert rejected.status_code == 422
+        assert "禁止" in rejected.text

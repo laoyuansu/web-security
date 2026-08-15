@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}发现与修复｜本地 Web 安全自查与修复台{% endblock %}
+{% block content %}
+  <header class="page-header">
+    <div><p class="eyebrow">发现分诊与修复闭环</p><h1>{{ project.name }}</h1></div>
+    <a class="button-link" href="/projects/{{ project.id }}">返回项目</a>
+  </header>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  {% for finding in findings %}
+    <section class="card form-card">
+      <h2>{{ finding.severity }} · {{ finding.title }}</h2>
+      <p><strong>模块：</strong>{{ finding.module }}　<strong>类型：</strong>{{ finding.finding_type }}</p>
+      <p><strong>证据：</strong>{{ finding.evidence }}</p>
+      <p><strong>预期：</strong>{{ finding.expected }}　<strong>实际：</strong>{{ finding.actual }}</p>
+      <p><strong>当前状态：</strong>{{ finding.status }}　<strong>发现时间：</strong>{{ finding.created_at }}</p>
+      <form method="post" action="/projects/{{ project.id }}/findings/{{ finding.id }}/status">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>分诊状态
+          <select name="status"><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="false_positive">误报</option><option value="fixed">已修复（需先通过回归）</option></select>
+        </label>
+        <button type="submit">更新发现状态</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/findings/{{ finding.id }}/tasks">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h3>创建修复任务</h3>
+        <label>根因<textarea name="root_cause" maxlength="1000" required></textarea></label>
+        <label>修复建议<textarea name="recommendation" maxlength="1000" required></textarea></label>
+        <label>负责人<input name="owner" maxlength="120"></label>
+        <label>截止日期<input name="due_date" type="date"></label>
+        <button type="submit">创建并确认任务</button>
+      </form>
+      <form method="post" action="/projects/{{ project.id }}/findings/{{ finding.id }}/verifications">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <h3>记录回归验证</h3>
+        <label>结果<select name="outcome"><option value="passed">通过</option><option value="failed">失败</option><option value="skipped">跳过</option></select></label>
+        <label>非敏感摘要<textarea name="detail" maxlength="1000" required></textarea></label>
+        <button type="submit">保存回归结果</button>
+      </form>
+    </section>
+  {% else %}<p>暂无发现。</p>{% endfor %}
+  <section class="card"><h2>修复任务</h2><ul class="item-list">{% for task in tasks %}<li><strong>发现 #{{ task.finding_id }} · {{ task.status }}</strong><span>{{ task.owner or '未分配' }}：{{ task.recommendation }}</span><form method="post" action="/projects/{{ project.id }}/findings/{{ task.finding_id }}/tasks/status"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><select name="status"><option value="open">待处理</option><option value="in_progress">处理中</option><option value="done">已完成</option></select><button type="submit">更新任务</button></form></li>{% else %}<li>暂无修复任务。</li>{% endfor %}</ul></section>
+  <section class="card"><h2>回归记录</h2><ul class="item-list">{% for item in verifications %}<li><strong>发现 #{{ item.finding_id }} · {{ item.outcome }}</strong><span>{{ item.detail }}（{{ item.created_at }}）</span></li>{% else %}<li>暂无回归记录。</li>{% endfor %}</ul></section>
+{% endblock %}
