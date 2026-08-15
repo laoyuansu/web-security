@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
+import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -23,6 +27,73 @@ IMPORT_FILES = {
     "docker_compose": ("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"),
     "openapi": ("openapi.json", "openapi.yaml", "openapi.yml"),
 }
+LISTENING_ADDRESS = re.compile(
+    r"^\s*TCP\s+(?P<host>127\.0\.0\.1|localhost):(?P<port>\d+)\s+\S+\s+LISTENING\s*$",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class RuntimeDiscovery:
+    """Candidate local assets plus reasons for any safely skipped discovery source."""
+
+    candidates: tuple[tuple[str, str, str], ...]
+    skipped: tuple[str, ...]
+
+
+def _completed_output(command: list[str]) -> tuple[str | None, str | None]:
+    """Run a fixed, read-only local command without exposing its error output to the UI."""
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3, check=False)
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None, "命令不可用、被拒绝或超时。"
+    if result.returncode != 0:
+        return None, "命令未成功完成。"
+    return result.stdout, None
+
+
+def _listening_local_urls(netstat_output: str) -> list[tuple[str, str, str]]:
+    urls: set[str] = set()
+    for line in netstat_output.splitlines():
+        match = LISTENING_ADDRESS.match(line)
+        if match is not None:
+            urls.add(f"http://127.0.0.1:{match.group('port')}")
+    return [("local_url", url, "检测到 127.0.0.1 TCP 监听；尚未登记或请求。") for url in sorted(urls)]
+
+
+def _docker_candidates(docker_output: str) -> list[tuple[str, str, str]]:
+    candidates = []
+    for line in docker_output.splitlines():
+        name, separator, remainder = line.partition("\t")
+        image, _, ports = remainder.partition("\t")
+        if separator and name.strip():
+            candidates.append(("docker_service", name.strip(), f"镜像：{image.strip() or '未知'}；端口：{ports.strip() or '未公开'}。"))
+    return candidates
+
+
+def discover_runtime_assets() -> RuntimeDiscovery:
+    """Suggest only self, loopback listeners, and Docker names; never register or probe a target."""
+
+    candidates = [("code_directory", str(Path(__file__).resolve().parent.parent), "当前自查台项目目录。")]
+    skipped = []
+    netstat_output, netstat_error = _completed_output(["netstat", "-ano", "-p", "tcp"])
+    if netstat_output is None:
+        skipped.append(f"本机监听发现已跳过：{netstat_error}")
+    else:
+        candidates.extend(_listening_local_urls(netstat_output))
+
+    if shutil.which("docker") is None:
+        skipped.append("Docker 容器发现已跳过：未检测到 Docker CLI。")
+    else:
+        docker_output, docker_error = _completed_output(
+            ["docker", "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"]
+        )
+        if docker_output is None:
+            skipped.append(f"Docker 容器发现已跳过：{docker_error}")
+        else:
+            candidates.extend(_docker_candidates(docker_output))
+    return RuntimeDiscovery(tuple(candidates), tuple(skipped))
 
 
 def _read_text(path: Path) -> str:

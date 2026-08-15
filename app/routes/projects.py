@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.checks import run_project_checks
-from app.discovery import import_registered_project_files
+from app.discovery import discover_runtime_assets, import_registered_project_files
 from app.projects import (
     ASSET_TYPES,
     TARGET_TYPES,
@@ -59,7 +59,10 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
             status_code=response_status,
         )
 
-    def project_page(request: Request, project_id: int, error: str | None = None, response_status: int = 200):
+    def project_page(
+        request: Request, project_id: int, error: str | None = None, response_status: int = 200,
+        runtime_discovery=None,
+    ):
         project = project_or_404(request, project_id)
         return templates.TemplateResponse(
             request=request,
@@ -75,6 +78,7 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
                 "asset_types": ASSET_TYPES,
                 "csrf_token": issue_csrf_token(request),
                 "error": error,
+                "runtime_discovery": runtime_discovery,
             },
             status_code=response_status,
         )
@@ -282,6 +286,19 @@ def build_project_router(templates: Jinja2Templates) -> APIRouter:
             return project_page(request, project_id, "请求已失效，请重试。", status.HTTP_403_FORBIDDEN)
         import_registered_project_files(database_path(request), project_id)
         return RedirectResponse(f"/projects/{project_id}", status_code=status.HTTP_303_SEE_OTHER)
+
+    @router.post("/projects/{project_id}/discover-runtime", response_class=HTMLResponse)
+    async def discover_project_runtime_assets(request: Request, project_id: int):
+        """Show bounded candidates without registering or requesting any discovered target."""
+
+        redirect = login_required(request)
+        if redirect is not None:
+            return redirect
+        project_or_404(request, project_id)
+        form = await request.form()
+        if not form_is_valid(request, form):
+            return project_page(request, project_id, "请求已失效，请重试。", status.HTTP_403_FORBIDDEN)
+        return project_page(request, project_id, runtime_discovery=discover_runtime_assets())
 
     @router.post("/projects/{project_id}/checks", response_class=HTMLResponse)
     async def run_checks(request: Request, project_id: int):

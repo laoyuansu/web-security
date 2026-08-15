@@ -104,6 +104,27 @@ def test_registers_local_project_target_and_asset(tmp_path: Path) -> None:
     assert "本地资料接口" in detail.text
 
 
+def test_runtime_discovery_shows_candidates_without_registering_them(tmp_path: Path, monkeypatch) -> None:
+    from app.discovery import RuntimeDiscovery
+
+    monkeypatch.setattr(
+        "app.routes.projects.discover_runtime_assets",
+        lambda: RuntimeDiscovery((("local_url", "http://127.0.0.1:8101", "测试候选。"),), ()),
+    )
+    with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
+        login(client)
+        project_id = create_project(client, "候选发现")
+        page = client.get(f"/projects/{project_id}")
+        response = client.post(
+            f"/projects/{project_id}/discover-runtime",
+            data={"csrf_token": csrf_token(page.text)},
+        )
+
+    assert response.status_code == 200
+    assert "http://127.0.0.1:8101" in response.text
+    assert "请在上方手动登记" in response.text
+
+
 def test_rejects_public_url_and_does_not_add_target(tmp_path: Path) -> None:
     with TestClient(create_test_app(tmp_path / "workbench.sqlite3")) as client:
         login(client)

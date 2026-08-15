@@ -56,6 +56,12 @@
   <p><a class="button-link" href="/projects/{{ project.id }}/matrix">配置权限矩阵</a></p>
   <p><a class="button-link" href="/projects/{{ project.id }}/findings">发现、修复与回归</a></p>
   <p><a class="button-link" href="/projects/{{ project.id }}/report">报告与备份</a></p>
+  <section class="card form-card" aria-labelledby="runtime-discovery-title">
+    <h2 id="runtime-discovery-title">发现本机候选资产</h2>
+    <p>仅读取当前项目、127.0.0.1 监听项和 Docker 容器名称；不会自动登记、请求或扫描候选目标。</p>
+    <form method="post" action="/projects/{{ project.id }}/discover-runtime"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">显示候选资产</button></form>
+    {% if runtime_discovery %}<ul class="item-list">{% for kind, value, detail in runtime_discovery.candidates %}<li><strong>{{ kind }} · {{ value }}</strong><span>{{ detail }} 请在上方手动登记后再导入或检查。</span></li>{% endfor %}{% for detail in runtime_discovery.skipped %}<li><strong>已跳过</strong><span>{{ detail }}</span></li>{% endfor %}</ul>{% endif %}
+  </section>
   <section class="card form-card import-card" aria-labelledby="import-title">
     <h2 id="import-title">从已登记目录导入</h2>
     <p>仅读取目录根部的 OpenAPI、requirements.txt、package.json 与 Docker Compose 文件；不会递归扫描目录或访问网络。</p>

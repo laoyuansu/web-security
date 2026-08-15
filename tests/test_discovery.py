@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app import discovery
 from app.database import initialize_database
 from app.discovery import import_registered_project_files
 from app.projects import add_target, create_project, list_assets, list_import_records
@@ -48,3 +49,42 @@ def test_records_skipped_imports_when_no_directory_is_registered(tmp_path: Path)
     assert len(records) == 4
     assert {record.outcome for record in records} == {"skipped"}
     assert {record.detail for record in records} == {"未登记代码目录。"}
+
+
+def test_runtime_discovery_suggests_only_loopback_listeners_and_docker_names(monkeypatch) -> None:
+    outputs = {
+        ("netstat", "-ano", "-p", "tcp"): "  TCP    127.0.0.1:8101      0.0.0.0:0      LISTENING\n  TCP    10.0.0.5:9000       0.0.0.0:0      LISTENING\n",
+        ("docker", "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"): "local-target\texample/target:latest\t127.0.0.1:8102->8102/tcp\n",
+    }
+
+    class Result:
+        returncode = 0
+
+        def __init__(self, stdout: str):
+            self.stdout = stdout
+
+    def fake_run(command, **_kwargs):
+        return Result(outputs[tuple(command)])
+
+    monkeypatch.setattr(discovery.subprocess, "run", fake_run)
+    monkeypatch.setattr(discovery.shutil, "which", lambda _name: "docker")
+
+    result = discovery.discover_runtime_assets()
+
+    assert ("local_url", "http://127.0.0.1:8101", "检测到 127.0.0.1 TCP 监听；尚未登记或请求。") in result.candidates
+    assert not any("10.0.0.5" in candidate[1] for candidate in result.candidates)
+    assert ("docker_service", "local-target", "镜像：example/target:latest；端口：127.0.0.1:8102->8102/tcp。") in result.candidates
+
+
+def test_runtime_discovery_records_unavailable_sources_without_probing(monkeypatch) -> None:
+    def unavailable(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(discovery.subprocess, "run", unavailable)
+    monkeypatch.setattr(discovery.shutil, "which", lambda _name: None)
+
+    result = discovery.discover_runtime_assets()
+
+    assert result.candidates[0][0] == "code_directory"
+    assert any("本机监听发现已跳过" in detail for detail in result.skipped)
+    assert any("Docker 容器发现已跳过" in detail for detail in result.skipped)

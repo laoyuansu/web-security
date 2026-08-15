@@ -27,3 +27,21 @@
 - 未实际访问 Windows 凭据库；自动化验证覆盖运行时凭据跳过和凭据不落盘边界。
 - 未运行 Docker Compose 或以 Edge 手工浏览；相关行为由 TestClient、静态配置检查和本机靶场测试覆盖。
 - 未进行联网漏洞库查询，符合默认离线要求。
+
+## 小项目：受限资产发现
+
+状态：已验证，待提交。
+
+### 监测目标与实际证据
+
+| 目标 | 可观察通过条件 | 实际证据 |
+| --- | --- | --- |
+| 本机服务边界 | 仅列出 `127.0.0.1`/`localhost` 监听项，不探测或请求服务 | `tests/test_discovery.py` 验证局域网地址被排除；真实发现返回 1 个候选（当前自查台目录），未请求任何 URL。 |
+| Docker 降级 | 固定只读 `docker ps` 失败时保留跳过原因 | 单元测试覆盖不可用命令；真实运行中 Docker 命令未成功完成，结果标为跳过。 |
+| 防误操作 | 候选仅展示，仍须手动登记后才可导入或检查 | `tests/test_projects.py::test_runtime_discovery_shows_candidates_without_registering_them` 通过。 |
+
+### 实际验证
+
+- `.\.venv\Scripts\python.exe -c "from app.discovery import discover_runtime_assets; ..."`：候选数为 1；跳过数为 1（Docker 发现命令未成功完成）。
+- `.\.venv\Scripts\python.exe -m pytest`：28 passed，1 条第三方弃用警告。
+- `.\.venv\Scripts\python.exe -m ruff check .` 与 `git diff --check`：通过。
